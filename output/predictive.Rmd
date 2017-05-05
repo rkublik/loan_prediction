@@ -5,26 +5,18 @@ date: "`r format(Sys.time(), '%B %d, %Y')`"
 output: 
   html_document:
     toc: true
+    toc_depth: 2
+    toc_float: 
+      collapsed: true
+      smooth_scroll: true
+    
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE,
                       comment = NA,
                       fig.align = "center")
-
-library(readr)
-library(dplyr)
-library(caret)
-library(rpart)
-library(rattle)
-library(rpart.plot)
-library(RColorBrewer)
-library(ranger)
-library(e1071)
-library(pROC)
-library(randomForest)
-library(glmnet)
-library(ggmosaic)
+set.seed(42)
 ```
 
 # Introduction
@@ -58,16 +50,35 @@ Loan_Status       Loan approved (Y/N)
 As with most real world data sets, the loan data provided by Dream Housing Finance requires some initial cleanup prior to working with it. In particular, there are missing values that must be dealt with before any functional model can be created. We begin by loading the training data provided, and converting the character data types to factors.
 
 ```{r echo = TRUE, message = FALSE, results = "asis"}
+library(dplyr)
+library(readr)
+library(caret)
+library(rpart)
+library(rattle)
+library(rpart.plot)
+library(RColorBrewer)
+library(ranger)
+library(e1071)
+library(pROC)
+library(randomForest)
+library(glmnet)
+library(ggmosaic)
+library(ggbiplot)
+
+pre_process <- function(data){
+  data %>% 
+    mutate(Gender = factor(Gender),
+           Married = factor(Married),
+           Dependents = as.integer(gsub("+", "", Dependents, fixed = TRUE)),
+           Education = factor(Education),
+           Self_Employed = factor(Self_Employed),
+           Credit_History = factor(Credit_History),
+           Property_Area = factor(Property_Area),
+           Loan_Amount_Term = factor(Loan_Amount_Term))
+}
 loan_data <- read_csv(file.path("..","data","train.csv")) %>% 
-  mutate(Gender = factor(Gender),
-         Married = factor(Married),
-         Dependents = as.integer(gsub("+", "", Dependents, fixed = TRUE)),
-         Education = factor(Education),
-         Self_Employed = factor(Self_Employed),
-         Credit_History = factor(Credit_History),
-         Property_Area = factor(Property_Area),
-         Loan_Status = factor(Loan_Status),
-         Loan_Amount_Term = factor(Loan_Amount_Term))
+  pre_process() %>% 
+  mutate(Loan_Status = factor(Loan_Status))
 
 ```
 
@@ -84,6 +95,11 @@ For the categorical variables, we will impute the missing values with the most c
 * **Loan_Amount_Term:** impute with median (360)
 * **Credit_History:** 5/6ths have good credit: impute NA's with 1
 
+For the continuous variables, we will use some groupings to obtain more refined estimates of the missing values:
+
+* **Dependents:** group by gender and marital status, and impute the NA's with the median number of dependents within each group.
+* **LoanAmount:** group by `Property_Area` and `Loan_Amount_Term` since it is likely that loan values will depend on the area and loan term.
+
 We will use a simple function to impute these values.
 
 ```{r echo = TRUE}
@@ -92,42 +108,38 @@ impute_value <- function(data, column, value){
   return(data)
 }
 
-loan_data <- loan_data %>% 
-  impute_value("Gender", "Male") %>% 
-  impute_value("Married", "Yes") %>% 
-  impute_value("Self_Employed", "No") %>% 
-  impute_value("Loan_Amount_Term", 360) %>% 
-  impute_value("Credit_History", 1)
-
-```
-
-For the number of `Dependents`, we will group the loan applicants by gender and marital status, and impute the NA's with the median number of dependents within each group.
-```{r}
-loan_data <- loan_data %>% 
-  group_by(Gender, Married) %>% 
-  mutate(Dependents = ifelse(is.na(Dependents), 
-                             as.integer(median(Dependents, na.rm = TRUE)), 
-                             Dependents)) %>% 
-  ungroup()
-summary(loan_data)
-```
-
-For the `LoanAmount` we will group the applications based on `Property_Area` and `Loan_Amount_Term` since it is likely that loan values will depend on the area and loan term.
-```{r}
-loan_data <- loan_data %>% 
-  group_by(Property_Area, Loan_Amount_Term) %>% 
-  mutate(LoanAmount = ifelse(is.na(LoanAmount), 
-                             as.integer(mean(LoanAmount, na.rm = TRUE)), 
-                             LoanAmount)) %>% 
-  ungroup()
+clean <- function(data){
+  data %>% 
+    # Impute Categorical variables with the most common value
+    impute_value("Gender", "Male") %>% 
+    impute_value("Married", "Yes") %>% 
+    impute_value("Self_Employed", "No") %>% 
+    impute_value("Loan_Amount_Term", 360) %>% 
+    impute_value("Credit_History", 1) %>% 
+    # Impute median number of dependents, by gender and marital status
+    group_by(Gender, Married) %>% 
+    mutate(Dependents = ifelse(is.na(Dependents), 
+                               as.integer(median(Dependents, na.rm = TRUE)), 
+                               Dependents)) %>% 
+    ungroup() %>% 
+    # Impute mean loan amount, by property area and loan term length
+    group_by(Property_Area, Loan_Amount_Term) %>% 
+    mutate(LoanAmount = ifelse(is.na(LoanAmount), 
+                               as.integer(mean(LoanAmount, na.rm = TRUE)), 
+                               LoanAmount)) %>% 
+    ungroup()
+}
+loan_data <- clean(loan_data)
 ```
 
 # Data Exploration
-Before building a predictive model, we want to explore the data and see if there are any variables that have an obvious correlation to the approval or rejection of a loan application. To do this we will make a series of plots to visualize the relationship between each variable:
+Before building a predictive model, we want to explore the data and see what insight we can gain.
+
+## Visual Inspection
+As there are a relatively small number of variables, we can look at each one individually to see if there is an obvious correlation to the approval or rejection of a loan application. To do this we will make a series of plots to visualize the relationship between each variable:
 ```{r echo = FALSE, results = "asis"}
 
 mosaic_plot <- function(data, varx, vary){
-  
   stats <- data %>%
     count_(varx)
     
@@ -146,6 +158,17 @@ mosaic_plot <- function(data, varx, vary){
          title = sprintf("%s vs %s", vary, varx)) + 
     scale_fill_discrete(name = vary)
   
+}
+
+box_plot <- function(data, varx, vary){
+  data %>% 
+    ggplot(aes_string(x = varx, y = vary)) + 
+    geom_boxplot(varwidth = TRUE) +
+    labs(x = varx,
+         y = vary,
+         title = sprintf("%s vs %s", vary, varx))  
+    
+
 }
 ```
 <div class="row">
@@ -177,7 +200,109 @@ mosaic_plot(loan_data,"Self_Employed", "Loan_Status")
 ```{r echo = FALSE}
 mosaic_plot(loan_data,"Property_Area", "Loan_Status")
 ```
+</div><div class="col-md-4 col-sm-6">
+```{r echo = FALSE}
+mosaic_plot(loan_data,"Loan_Amount_Term", "Loan_Status")
+```
+</div><div class="col-md-4 col-sm-6">
+```{r echo = FALSE}
+box_plot(loan_data, "Loan_Status", "LoanAmount")
+```
+</div><div class="col-md-4 col-sm-6">
+```{r echo = FALSE}
+box_plot(loan_data, "Loan_Status", "ApplicantIncome")
+```
+</div><div class="col-md-4 col-sm-6">
+```{r echo = FALSE}
+box_plot(loan_data, "Loan_Status", "CoapplicantIncome")
+```
+</div><div class="col-md-4 col-sm-6">
+```{r echo = FALSE}
+loan_data %>% 
+  mutate(TotalIncome = ApplicantIncome + CoapplicantIncome) %>% 
+  box_plot("Loan_Status", "TotalIncome")
+```
 </div>
 </div>
+
+In the final plot, `TotalIncome` is a new variable computed as the sum of `ApplicantIncome` and `CoapplicantIncome`.
+
+From the plots we can draw a number of conclusions:
+
+* Credit history shows the most significant correlation with loan approval. We will include this in all of our models
+* Marital status, Education level, and Property area appear to have a small correlation with loan approval
+* The remaining variables do not appear to have any significant correlation with loan approval.
+
+## Principal Component Ananlysis
+In many cases, Principal Component Analysis (PCA) provides some insight into the data. By plotting the data in PCA space we can potentially see clustering in the data, along with information about co-linearity of the variables. Plotting the PCA of the input variables, we obtain:
+```{r echo = TRUE}
+train_pca <- loan_data %>% 
+  select(-Loan_ID, -Loan_Status) %>%
+  # convert factors to numeric values
+  mutate(Gender = as.numeric(Gender),
+         Married = as.numeric(Married),
+         Education = as.numeric(Education),
+         Self_Employed = as.numeric(Self_Employed),
+         Loan_Amount_Term = as.numeric(Loan_Amount_Term),
+         Credit_History = as.numeric(Credit_History),
+         Property_Area = as.numeric(Property_Area)) %>% 
+  # Calculate PCA
+  prcomp(center = TRUE, scale = TRUE) 
+  
+ggbiplot(train_pca) 
+
+```
+
+This plot shows all of the data points in PCA space, and includes arrows mapping the variables to the 2 dimensional PCA space. Though the text is a bit difficult to read, we see that:
+
+* `Married` and `Gender` are colinear
+* `CoapplicantIncome` and `Dependents` are colinear
+* `ApplicantIncome` and `Self_Employed` are colinear
+
+Using this information we will be able to simplify the models that we build. Additionally, when we are building the logistic model, we will want to avoid having variables that are co-linear.
+
+```{r include = FALSE}
+# remove plyr package, as the conflicts with dplyr cause problems later
+detach("package:ggbiplot", unload = TRUE)
+detach("package:plyr")
+```
+
+# Predictive Models
+Using the insight we have gained in the previous section, we will construct a number of predictive models and compare their performance. To insure a fair comparison, we will split the provided data into test and training sets and use these to evaluate how well our models do on unseen data. Using the `caret` package, we create `loan$train`, and `loan$test`:
+```{r echo = TRUE}
+train_idx = createDataPartition(loan_data$Loan_Status, p = 0.7, list = FALSE)
+loan = list(train = loan_data[train_idx,],
+            test = loan_data[-train_idx,])
+```
+
+In addition, since the data was provided as part of an online competition, we can submit the results of our models to see how they compare to models developed by other people. We will pre-process the test data set using the functions we created earlier:
+```{r echo = TRUE, message = FALSE}
+loan_test_data <- read_csv(file.path("..","data","test.csv")) %>% 
+  pre_process() %>% 
+  clean()
+```
+
+## Credit History as Sole Predictor
+From our earlier exploration, we saw that the `Credit_History` variable has the most obvious correlation with `Loan_Status`. For this initial attempt at a model, we will predict loan approval for all customers with `Credit_History = 1`. Applying this to our test partition
+```{r echo = TRUE}
+credit_history_success <- loan$test %>% 
+  mutate(loan_approved = Loan_Status == "Y",
+         credit_only = Credit_History == 1) %>% 
+  summarize(n = n(),
+            success = sum(credit_only)/n)
+
+```
+we obtain an accuracy of `r round(100*credit_history_success$success[1])`%, which seems quite good. However, this is likely dependent on the way our training and testing data sets were partitioned. 
+
+If we apply this same technique to the provided test data and submit it to the competition (using the code provided below), we obtain an accuracy of 78% which puts us in 945th place (tied with 315 other people at the time of writing).
+
+```{r echo = TRUE}
+loan_test_data %>% 
+  mutate(Loan_Status = ifelse(Credit_History == 1, "Y", "N")) %>% 
+  select(Loan_ID, Loan_Status) %>% 
+  write_csv(file.path("credit_only.csv"))
+```
+
+## Logistic Regression
 
 
