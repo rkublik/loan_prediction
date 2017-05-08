@@ -16,7 +16,7 @@ output:
 knitr::opts_chunk$set(echo = TRUE,
                       comment = NA,
                       fig.align = "center")
-set.seed(42)
+#set.seed(42)
 ```
 
 # Introduction
@@ -43,7 +43,7 @@ CoapplicantIncome Coapplicant income
 LoanAmount        Loan amount in thousands
 Loan_Amount_Term  Term of loan in months
 Credit_History    credit history meets guidelines
-Property_Area     Urban/ Semi Urban/ Rural
+Property_Area     Urban/Semi Urban/Rural
 Loan_Status       Loan approved (Y/N)
 
 # Pre-processing
@@ -294,15 +294,112 @@ credit_history_success <- loan$test %>%
 ```
 we obtain an accuracy of `r round(100*credit_history_success$success[1])`%, which seems quite good. However, this is likely dependent on the way our training and testing data sets were partitioned. 
 
-If we apply this same technique to the provided test data and submit it to the competition (using the code provided below), we obtain an accuracy of 78% which puts us in 945th place (tied with 315 other people at the time of writing).
+If we apply this same technique to the provided test data and submit it to the competition (using the code provided below), we obtain an accuracy of 78% which puts us in 945th place (tied with 319 other people at the time of writing).
 
 ```{r echo = TRUE}
 loan_test_data %>% 
   mutate(Loan_Status = ifelse(Credit_History == 1, "Y", "N")) %>% 
-  select(Loan_ID, Loan_Status) %>% 
+  select(Loan_ID, Loan_Status) %>%  
   write_csv(file.path("credit_only.csv"))
 ```
 
 ## Logistic Regression
 
+For our logistic regression solution, we will include a few more variables. From our visual inspection of the variables, and the results of PCA, we will build a linear regression model that includes the variables: `Credit_History`, `Married`, `Education`, `Property_Area`. Using the `caret` package to do cross-validation, we train our model as shown below:
 
+```{r echo = TRUE, message = FALSE}
+
+# Define a common training control:
+train_control <- trainControl(method = "repeatedcv",
+                              number = 10,
+                              repeats = 10,
+                              summaryFunction = twoClassSummary,
+                              classProbs = TRUE,
+                              verboseIter = FALSE)
+
+logit_model <- train(Loan_Status ~ Credit_History + Married + Education + Property_Area,
+                   data = loan$train,
+                   method = "glm",
+                   metric = "ROC",
+                   trControl = train_control,
+                   family = binomial(link = "logit"))
+```
+
+If we test our model on our training partition
+
+```{r echo = TRUE}
+logit_pred <- predict(logit_model, loan$test, type = "prob")
+logit_accuracy <- data.frame(loan_id = loan$test$Loan_ID,
+                       loan_granted = loan$test$Loan_Status == "Y",
+                       logit = logit_pred$Y > 0.5) %>%
+  summarize(n = n(),
+            accuracy = sum(logit == loan_granted)/n)
+
+round(logit_accuracy$accuracy[1]*100)
+```
+
+we obtain an accuracy of `r round(logit_accuracy$accuracy[1]*100)`%. We can also examine the variables included in the model to determine which are the most significant.
+```{r echo = TRUE}
+summary(logit_model)$coefficients
+```
+Here we see that the variables with the most significance (smallest p-value) are `Credit_History` and `Property_Area`. We know that including too many variables in a model can lead to over-fitting, and poor performance on new data. Let's look at a model that only contains the two most important variables.  Following the same steps as above, we will train and test a reduced logistic model.
+
+```{r echo = TRUE, message=FALSE, warning=FALSE}
+logit_reduced_model <- train(Loan_Status ~ Credit_History  + Property_Area,
+                   data = loan$train,
+                   method = "glm",
+                   metric = "ROC",
+                   trControl = train_control,
+                   family = binomial(link = "logit"))
+logit_reduced_pred <- predict(logit_reduced_model, loan$test, type = "prob")
+logit_reduced_accuracy <- data.frame(loan_id = loan$test$Loan_ID,
+                       loan_granted = loan$test$Loan_Status == "Y",
+                       logit = logit_reduced_pred$Y > 0.5) %>%
+  summarize(n = n(),
+            accuracy = sum(logit == loan_granted)/n)
+summary(logit_reduced_model)$coefficients
+round(logit_reduced_accuracy$accuracy[1]*100)
+```
+
+This model gives us an accuracy of `r round(logit_reduced_accuracy$accuracy[1]*100)`% on our test partition. Our reduced model performs just as well as the more detailed model, however, both models are out-performed on our training partition by the credit history only model. The final test will be how well our logistic model performs on the provided test data.
+
+We will use the reduced model for our submission. We will train the model using the full training data set, and then generate predictions to submit.
+
+```{r echo = TRUE}
+logit_submission_model <- train(Loan_Status ~ Credit_History  + Property_Area,
+                   data = loan_data,
+                   method = "glm",
+                   metric = "ROC",
+                   trControl = train_control,
+                   family = binomial(link = "logit"))
+
+logit_submission_pred <- predict(logit_reduced_model, loan_test_data, type = "prob")
+data.frame(Loan_ID = loan_test_data$Loan_ID,
+           Loan_Status = ifelse(logit_submission_pred$Y > 0.5, "Y", "N")) %>% 
+    write_csv(file.path("logistic_regression.csv"))
+```
+
+When we submit this result, our reported accuracy is again 78%. It seems that Logistic regression isn't the right approach for this problem.
+
+## Decision Tree
+
+We will again take the varibles determined to be the most important and use them in our decision tree model. Again, we will utilize the `caret` package to perform the cross validation on our model.
+```{r echo = TRUE}
+
+rpart_model <- train(#Loan_Status ~ Credit_History + Married + Dependents + Education + ApplicantIncome + CoapplicantIncome + LoanAmount + Property_Area,
+                     Loan_Status ~ Credit_History + Married + Education + Property_Area,
+                     data = loan$train,
+                     method = "rpart",
+                     metric = "ROC",
+                     trControl = train_control)
+
+```
+
+
+
+
+```{r echo = FALSE}
+fancyRpartPlot(rpart_model$finalModel)
+
+
+```
