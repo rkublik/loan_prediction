@@ -50,6 +50,7 @@ Loan_Status       Loan approved (Y/N)
 As with most real world data sets, the loan data provided by Dream Housing Finance requires some initial cleanup prior to working with it. In particular, there are missing values that must be dealt with before any functional model can be created. We begin by loading the training data provided, and converting the character data types to factors.
 
 ```{r echo = TRUE, message = FALSE, results = "asis"}
+library(plyr)
 library(dplyr)
 library(readr)
 library(caret)
@@ -134,8 +135,270 @@ loan_data <- clean(loan_data)
 
 # Data Exploration
 Before building a predictive model, we want to explore the data and see what insight we can gain.
+<!--
+## Variable Distributions
+We will explore the distributions of the continuous variables in turn.
 
-## Visual Inspection
+### Applicant Income
+Lets begin by looking at `ApplicantIncome`
+<div class="row">
+<div class="col-md-6">
+```{r echo = FALSE}
+loan_data %>% 
+  ggplot(aes(x = ApplicantIncome)) +
+  geom_histogram(binwidth = 1000)
+```
+</div>
+<div class="col-md-6">
+```{r echo = FALSE}
+loan_data %>% 
+  ggplot(aes(x = 1, y = ApplicantIncome)) +
+  geom_boxplot()
+```
+</div>
+</div>
+The histogram suggests that there are a number of extreme values, and the boxplot confirms this. Is the wide range in incomes due to external factors? like:
+
+<div class = "row">
+<div class = "col-md-4 col-sm-6">
+**Education Level**
+```{r echo = FALSE}
+loan_data %>% 
+  ggplot(aes(x = Education, ApplicantIncome)) +
+  geom_boxplot() + 
+  labs(x = "Education Level", 
+       y = "Applicant Income")
+```
+</div>
+<div class = "col-md-4 col-sm-6">
+**Gender**
+```{r echo = FALSE}
+loan_data %>% 
+  ggplot(aes(x = Gender, ApplicantIncome)) +
+  geom_boxplot() + 
+  labs(x = "Gender", 
+       y = "Applicant Income")
+```
+</div>
+<div class = "col-md-4 col-sm-6">
+**Marital Status**
+```{r echo = FALSE}
+loan_data %>% 
+  ggplot(aes(x = Married, ApplicantIncome)) +
+  geom_boxplot() + 
+  labs(x = "Married", 
+       y = "Applicant Income")
+```
+</div>
+<div class = "col-md-4 col-sm-6">
+**Employment Status**
+```{r echo = FALSE}
+loan_data %>% 
+  ggplot(aes(x = Self_Employed, ApplicantIncome)) +
+  geom_boxplot() + 
+  labs(x = "Self Employed", 
+       y = "Applicant Income")
+```
+</div>
+<div class = "col-md-4 col-sm-6">
+**Number of Dependents**
+```{r echo = FALSE}
+loan_data %>% 
+  ggplot(aes(x = factor(Dependents), ApplicantIncome)) +
+  geom_boxplot() + 
+  labs(x = "Number of Dependents", 
+       y = "Applicant Income")
+```
+</div>
+<div class = "col-md-4 col-sm-6">
+**Property Area**
+```{r echo = FALSE}
+loan_data %>% 
+  ggplot(aes(x = Property_Area, ApplicantIncome)) +
+  geom_boxplot() + 
+  labs(x = "Property Area", 
+       y = "Applicant Income")
+```
+</div>
+</div>
+
+In all cases, the majority of observations are not significantly affected by Education level, Gender, or Marital status. We do notice that more of the high-earning individuals appear to be male, married, have obtained a graduate education level, and are not self-employed.
+
+
+### Coapplicant Income
+We now consider `CoapplicantIncome`
+<div class="row">
+<div class="col-md-6">
+```{r echo = FALSE}
+loan_data %>% 
+  ggplot(aes(x = CoapplicantIncome)) +
+  geom_histogram(binwidth = 1000)
+```
+</div>
+<div class="col-md-6">
+```{r echo = FALSE}
+loan_data %>% 
+  ggplot(aes(x = 1, y = CoapplicantIncome)) +
+  geom_boxplot()
+```
+</div>
+</div>
+Again we see that there are a number of extreme values. Let's look at how these outliers depend on other variables:
+
+<div class = "row">
+<div class = "col-md-4 col-sm-6">
+**Education Level**
+```{r echo = FALSE}
+loan_data %>% 
+  ggplot(aes(x = Education, CoapplicantIncome)) +
+  geom_boxplot() + 
+  labs(x = "Education Level", 
+       y = "Coapplicant Income")
+```
+</div>
+<div class = "col-md-4 col-sm-6">
+**Gender**
+```{r echo = FALSE}
+loan_data %>% 
+  ggplot(aes(x = Gender, CoapplicantIncome)) +
+  geom_boxplot() + 
+  labs(x = "Gender", 
+       y = "Coapplicant Income")
+```
+</div>
+<div class = "col-md-4 col-sm-6">
+**Marital Status**
+```{r echo = FALSE}
+loan_data %>% 
+  ggplot(aes(x = Married, CoapplicantIncome)) +
+  geom_boxplot() + 
+  labs(x = "Married", 
+       y = "Coapplicant Income")
+```
+</div>
+<div class = "col-md-4 col-sm-6">
+**Employment Status**
+```{r echo = FALSE}
+loan_data %>% 
+  ggplot(aes(x = Self_Employed, CoapplicantIncome)) +
+  geom_boxplot() + 
+  labs(x = "Self Employed", 
+       y = "Coapplicant Income")
+```
+</div>
+<div class = "col-md-4 col-sm-6">
+**Number of Dependents**
+```{r echo = FALSE}
+loan_data %>% 
+  ggplot(aes(x = factor(Dependents), CoapplicantIncome)) +
+  geom_boxplot() + 
+  labs(x = "Number of Dependents", 
+       y = "Coapplicant Income")
+```
+</div>
+<div class = "col-md-4 col-sm-6">
+**Property Area**
+```{r echo = FALSE}
+loan_data %>% 
+  ggplot(aes(x = Property_Area, CoapplicantIncome)) +
+  geom_boxplot() + 
+  labs(x = "Property Area", 
+       y = "Coapplicant Income")
+```
+</div>
+</div>
+
+Again we note that the bulk of the distributions is unchanged by the grouping. Here we see that the higher coapplicant incomes are associated with males who are not self-employed and have obtained graduate education.
+
+### Loan Amount
+Lets begin bylooking at `LoanAmount`
+<div class="row">
+<div class="col-md-6">
+```{r echo = FALSE}
+loan_data %>% 
+  ggplot(aes(x = LoanAmount)) +
+  geom_histogram(bins = 50)
+```
+</div>
+<div class="col-md-6">
+```{r echo = FALSE}
+loan_data %>% 
+  ggplot(aes(x = 1, y = LoanAmount)) +
+  geom_boxplot()
+```
+</div>
+</div>
+Again we see that there are a number of extreme values. Let's look at how these outliers depend on other variables:
+
+<div class = "row">
+<div class = "col-md-4 col-sm-6">
+**Education Level**
+```{r echo = FALSE}
+loan_data %>% 
+  ggplot(aes(x = Education, LoanAmount)) +
+  geom_boxplot() + 
+  labs(x = "Education Level", 
+       y = "Loan Amount")
+```
+</div>
+<div class = "col-md-4 col-sm-6">
+**Gender**
+```{r echo = FALSE}
+loan_data %>% 
+  ggplot(aes(x = Gender, LoanAmount)) +
+  geom_boxplot() + 
+  labs(x = "Gender", 
+       y = "Loan Amount")
+```
+</div>
+<div class = "col-md-4 col-sm-6">
+**Marital Status**
+```{r echo = FALSE}
+loan_data %>% 
+  ggplot(aes(x = Married, LoanAmount)) +
+  geom_boxplot() + 
+  labs(x = "Married", 
+       y = "Loan Amount")
+```
+</div>
+<div class = "col-md-4 col-sm-6">
+**Employment Status**
+```{r echo = FALSE}
+loan_data %>% 
+  ggplot(aes(x = Self_Employed, LoanAmount)) +
+  geom_boxplot() + 
+  labs(x = "Self Employed", 
+       y = "Loan Amount")
+```
+</div>
+<div class = "col-md-4 col-sm-6">
+**Number of Dependents**
+```{r echo = FALSE}
+loan_data %>% 
+  ggplot(aes(x = factor(Dependents), LoanAmount)) +
+  geom_boxplot() + 
+  labs(x = "Number of Dependents", 
+       y = "Loan Amount")
+```
+</div>
+<div class = "col-md-4 col-sm-6">
+**Property Area**
+```{r echo = FALSE}
+loan_data %>% 
+  ggplot(aes(x = Property_Area, LoanAmount)) +
+  geom_boxplot() + 
+  labs(x = "Property Area", 
+       y = "Loan Amount")
+```
+</div>
+</div>
+
+Again we note that the bulk of the distributions is unchanged by the grouping. Here we see that the higher coapplicant incomes are associated with males who are not self-employed and have obtained graduate education.
+
+
+
+-->
+## Correlation with Loan Approval
 As there are a relatively small number of variables, we can look at each one individually to see if there is an obvious correlation to the approval or rejection of a loan application. To do this we will make a series of plots to visualize the relationship between each variable:
 ```{r echo = FALSE, results = "asis"}
 
@@ -234,7 +497,7 @@ From the plots we can draw a number of conclusions:
 * The remaining variables do not appear to have any significant correlation with loan approval.
 
 ## Principal Component Ananlysis
-In many cases, Principal Component Analysis (PCA) provides some insight into the data. By plotting the data in PCA space we can potentially see clustering in the data, along with information about co-linearity of the variables. Plotting the PCA of the input variables, we obtain:
+In many cases, Principal Component Analysis (PCA) can provide some insight into the data. By plotting the data in PCA space we can potentially see clustering in the data, along with information about co-linearity of the variables. Plotting the PCA of the input variables, we obtain:
 ```{r echo = TRUE}
 train_pca <- loan_data %>% 
   select(-Loan_ID, -Loan_Status) %>%
@@ -261,11 +524,34 @@ This plot shows all of the data points in PCA space, and includes arrows mapping
 
 Using this information we will be able to simplify the models that we build. Additionally, when we are building the logistic model, we will want to avoid having variables that are co-linear.
 
-```{r include = FALSE}
-# remove plyr package, as the conflicts with dplyr cause problems later
-detach("package:ggbiplot", unload = TRUE)
-detach("package:plyr")
+If we include the `Loan_Status` variable in our PCA, we notice something interesting.
+```{r echo = TRUE}
+train_pca <- loan_data %>% 
+  select(-Loan_ID) %>%
+  # convert factors to numeric values
+  mutate(Gender = as.numeric(Gender),
+         Married = as.numeric(Married),
+         Education = as.numeric(Education),
+         Self_Employed = as.numeric(Self_Employed),
+         Loan_Amount_Term = as.numeric(Loan_Amount_Term),
+         Credit_History = as.numeric(Credit_History),
+         Loan_Status = as.numeric(Loan_Status),
+         Property_Area = as.numeric(Property_Area)) %>% 
+  # Calculate PCA
+  prcomp(center = TRUE, scale = TRUE) 
+  
+ggbiplot(train_pca) +
+  lims(y = c(-3,3) )
+
 ```
+
+We see that `Credit_History` is almost co-linear with `Loan_Status`. As a result, we expect that `Credit_History` will have the most impact on any predictive model we create.
+
+<!-- ```{r include = FALSE} -->
+<!-- # remove plyr package, as the conflicts with dplyr cause problems later -->
+<!-- detach("package:ggbiplot", unload = TRUE) -->
+<!-- detach("package:plyr") -->
+<!-- ``` -->
 
 # Predictive Models
 Using the insight we have gained in the previous section, we will construct a number of predictive models and compare their performance. To insure a fair comparison, we will split the provided data into test and training sets and use these to evaluate how well our models do on unseen data. Using the `caret` package, we create `loan$train`, and `loan$test`:
@@ -290,7 +576,7 @@ credit_history_success <- loan$test %>%
          credit_only = Credit_History == 1) %>% 
   summarize(n = n(),
             success = sum(credit_only)/n)
-
+round(100*credit_history_success$success[1])
 ```
 we obtain an accuracy of `r round(100*credit_history_success$success[1])`%, which seems quite good. However, this is likely dependent on the way our training and testing data sets were partitioned. 
 
@@ -342,38 +628,172 @@ we obtain an accuracy of `r round(logit_accuracy$accuracy[1]*100)`%. We can also
 ```{r echo = TRUE}
 summary(logit_model)$coefficients
 ```
-Here we see that the variables with the most significance (smallest p-value) are `Credit_History` and `Property_Area`. We know that including too many variables in a model can lead to over-fitting, and poor performance on new data. Let's look at a model that only contains the two most important variables.  Following the same steps as above, we will train and test a reduced logistic model.
+Here we see that the only variable of significance (smallest p-value) is `Credit_History`. In this case, we don't expect our logistic model to perform significantly better than just using the credit history. We will need to look at the data provided and see if we can employ feature engineering to create new variables that will improve our prediction ability.
+
+# Feature Engineering
+
+Take a minute and go back to the Introduction, and look at the variables provided. At first glance, it appears that all the important data has been collected. We have information about the applicant's income, the coapplicant's income. We can compare the income to the loan amount, and check the applicant's credit history. However, this doesn't give a complete picture of the applicant's financial status. There are a few other bits of information I think might be relevant:
+
+* Assuming that the applicant and co-applicant will be making payments together, we will consider the total income. We previously looked at the total income and didn't see a strong correlation with loan approval, but we will see that can be helpful shortly.
+* Typically a bank would want assurances that the applicant will be able to make the monthly payments, and requests information about the applicant's regular expenses. We aren't given this information, but can create a proxy for it by assuming that total expenses are proportional to the number of people in the household. 
+* Finally we will include the ratio of the loan amount to total income. We would naively expect that a lower ratio would be more likely to be approved.
+
+We augment our data set with these new variables:
+```{r echo = TRUE}
+new_features <- function(data){
+  data %>% 
+    mutate(TotalIncome = ApplicantIncome + CoapplicantIncome,
+           HouseholdSize = 1 + as.numeric(Married == "Yes") + Dependents,
+           LoanRatio = LoanAmount / TotalIncome)
+}
+
+loan_data <- new_features(loan_data)
+
+```
+
+## Data Exploration:
+
+To quickly check the influence of our new variables, we will make a plot of the PCA:
+
+```{r echo = TRUE}
+#library(ggbiplot)
+
+train_pca <- loan_data %>% 
+  select(-Loan_ID) %>%
+  # convert factors to numeric values
+  mutate(Gender = as.numeric(Gender),
+         Married = as.numeric(Married),
+         Education = as.numeric(Education),
+         Self_Employed = as.numeric(Self_Employed),
+         Loan_Amount_Term = as.numeric(Loan_Amount_Term),
+         Credit_History = as.numeric(Credit_History),
+         Loan_Status = as.numeric(Loan_Status),
+         Property_Area = as.numeric(Property_Area)) %>% 
+  # Calculate PCA
+  prcomp(center = TRUE, scale = TRUE) 
+  
+ggbiplot(train_pca) +
+  lims(y = c(-3,3) )
+```
+
+<!-- ```{r include = FALSE} -->
+<!-- # remove plyr package, as the conflicts with dplyr cause problems later -->
+<!-- detach("package:ggbiplot", unload = TRUE) -->
+<!-- detach("package:plyr") -->
+<!-- ``` -->
+
+
+By adding these new variables, we have eliminated the close association between `Credit_History` and `Loan_Status`. In the plots below, we will explore the single-variable influence of our new variables on `Loan_Status`.
+<div class="row">
+<div class="col-md-4 col-sm-6">
+```{r echo = FALSE}
+mosaic_plot(loan_data, "HouseholdSize", "Loan_Status")
+```
+</div>
+<div class="col-md-4 col-sm-6">
+```{r echo = FALSE}
+box_plot(loan_data, "Loan_Status", "TotalIncome")
+```
+</div>
+<div class="col-md-4 col-sm-6">
+```{r echo = FALSE}
+box_plot(loan_data, "Loan_Status", "LoanRatio")
+```
+</div>
+</div>
+
+While these variables don't appear to have much influence indivually, we will include them due to their effect on the PCA.
+
+# Predictive Modeling: Take 2
+
+Now that we have added new variables, we will need to split our dataset into new training and testing partitions. We will also add the new variables to the provided test dataset.
+
+```{r echo = TRUE}
+train_idx = createDataPartition(loan_data$Loan_Status, p = 0.7, list = FALSE)
+loan = list(train = loan_data[train_idx,],
+            test = loan_data[-train_idx,])
+
+loan_test_data <- loan_test_data %>% 
+  new_features()
+```
+
+
+
+## Logistic Regression
+We will again begin with a logistic regression, In this case, we will include the variables: `LoanRatio`, `HouseholdSize`, `Credit_History`, `Property_Area`:
 
 ```{r echo = TRUE, message=FALSE, warning=FALSE}
-logit_reduced_model <- train(Loan_Status ~ Credit_History  + Property_Area,
+logit_enhanced_model <- train(Loan_Status ~ Credit_History  + Property_Area + LoanRatio + HouseholdSize,
                    data = loan$train,
                    method = "glm",
                    metric = "ROC",
                    trControl = train_control,
                    family = binomial(link = "logit"))
-logit_reduced_pred <- predict(logit_reduced_model, loan$test, type = "prob")
-logit_reduced_accuracy <- data.frame(loan_id = loan$test$Loan_ID,
+logit_enhanced_pred <- predict(logit_enhanced_model, loan$test, type = "prob")
+logit_enhanced_accuracy <- data.frame(loan_id = loan$test$Loan_ID,
                        loan_granted = loan$test$Loan_Status == "Y",
-                       logit = logit_reduced_pred$Y > 0.5) %>%
+                       logit = logit_enhanced_pred$Y > 0.5) %>%
   summarize(n = n(),
             accuracy = sum(logit == loan_granted)/n)
-summary(logit_reduced_model)$coefficients
-round(logit_reduced_accuracy$accuracy[1]*100)
+summary(logit_enhanced_model)$coefficients
+round(logit_enhanced_accuracy$accuracy[1]*100)
 ```
 
-This model gives us an accuracy of `r round(logit_reduced_accuracy$accuracy[1]*100)`% on our test partition. Our reduced model performs just as well as the more detailed model, however, both models are out-performed on our training partition by the credit history only model. The final test will be how well our logistic model performs on the provided test data.
-
-We will use the reduced model for our submission. We will train the model using the full training data set, and then generate predictions to submit.
+This model gives us an accuracy of `r round(logit_enhanced_accuracy$accuracy[1]*100)`% on our test partition. Submitting this to the competition gives a score of 78%.
 
 ```{r echo = TRUE}
-logit_submission_model <- train(Loan_Status ~ Credit_History  + Property_Area,
+logit_submission_model <- train(Loan_Status ~ Credit_History  + Property_Area + LoanRatio + HouseholdSize,
                    data = loan_data,
                    method = "glm",
                    metric = "ROC",
                    trControl = train_control,
                    family = binomial(link = "logit"))
 
-logit_submission_pred <- predict(logit_reduced_model, loan_test_data, type = "prob")
+logit_submission_pred <- predict(logit_submission_model, loan_test_data, type = "prob")
+data.frame(Loan_ID = loan_test_data$Loan_ID,
+           Loan_Status = ifelse(logit_submission_pred$Y > 0.5, "Y", "N")) %>% 
+    write_csv(file.path("logistic_regression.csv"))
+```
+
+
+Let's try a larger model:
+```{r echo = TRUE, message=FALSE, warning=FALSE}
+logit_enhanced_model <- train(Loan_Status ~ Gender + Married + Dependents + Education + Self_Employed + ApplicantIncome + 
+                                CoapplicantIncome + LoanAmount + Loan_Amount_Term + Credit_History + Property_Area + 
+                                TotalIncome + HouseholdSize + LoanRatio,
+                   data = loan$train,
+                   method = "glm",
+                   metric = "ROC",
+                   trControl = train_control,
+                   family = binomial(link = "logit"))
+logit_enhanced_pred <- predict(logit_enhanced_model, loan$test, type = "prob")
+logit_enhanced_accuracy <- data.frame(loan_id = loan$test$Loan_ID,
+                       loan_granted = loan$test$Loan_Status == "Y",
+                       logit = logit_enhanced_pred$Y > 0.5) %>%
+  summarize(n = n(),
+            accuracy = sum(logit == loan_granted)/n)
+summary(logit_enhanced_model)$coefficients
+round(logit_enhanced_accuracy$accuracy[1]*100)
+```
+
+Our reduced model performs just as well as the more detailed model, however, both models are out-performed on our training partition by the credit history only model. The final test will be how well our logistic model performs on the provided test data.
+
+
+
+
+We will use the reduced model for our submission. We will train the model using the full training data set, and then generate predictions to submit.
+
+```{r echo = TRUE}
+logit_submission_model <- train(Loan_Status ~ Gender + Married + Dependents + Education + Self_Employed + ApplicantIncome + 
+                                CoapplicantIncome + LoanAmount + Loan_Amount_Term + Credit_History + Property_Area + 
+                                TotalIncome + HouseholdSize + LoanRatio,
+                   data = loan_data,
+                   method = "glm",
+                   metric = "ROC",
+                   trControl = train_control,
+                   family = binomial(link = "logit"))
+
+logit_submission_pred <- predict(logit_enhanced_model, loan_test_data, type = "prob")
 data.frame(Loan_ID = loan_test_data$Loan_ID,
            Loan_Status = ifelse(logit_submission_pred$Y > 0.5, "Y", "N")) %>% 
     write_csv(file.path("logistic_regression.csv"))
